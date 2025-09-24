@@ -1,0 +1,47 @@
+#define LED_PIN 7
+
+unsigned long period = 1000; // base period: 1ms
+int duty = 0; // base duty: 50%
+
+void setup() {
+  pinMode(LED_PIN, OUTPUT);
+  set_period(100); // period 설정
+}
+
+void loop() {
+  for (int i = 0; i <= 50; i++) {
+    set_duty(i);
+    pwm_cycle();
+    delay(10); // 10ms 밝기 증가
+  }
+
+  for (int i = 50; i >= 0; i--) {
+    set_duty(i);
+    pwm_cycle();
+    delay(10); // 10ms 밝기 감소
+  }
+}
+
+void pwm_cycle() {
+  unsigned long on_time = (unsigned long)period * duty / 100;
+  unsigned long off_time = period - on_time;
+
+  digitalWrite(LED_PIN, HIGH);
+  delayMicroseconds(on_time);
+  digitalWrite(LED_PIN, LOW);
+  delayMicroseconds(off_time);
+}
+
+// period 설정 함수
+void set_period(int p) {
+  if (p >= 100 && p <= 10000) {
+    period = p;
+  }
+}
+
+// duty 설정 함수
+void set_duty(int d) {
+  if (d >= 0 && d <= 100) {
+    duty = d;
+  }
+}
