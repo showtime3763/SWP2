@@ -12,13 +12,13 @@ void loop() {
   for (int i = 0; i <= 50; i++) {
     set_duty(i);
     pwm_cycle();
-    delay(1); // 1ms 밝기 증가
+    delay(10);
   }
 
   for (int i = 50; i >= 0; i--) {
     set_duty(i);
     pwm_cycle();
-    delay(1); // 1ms 밝기 감소
+    delay(10); 
   }
 }
 
