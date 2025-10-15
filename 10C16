@@ -1,0 +1,199 @@
+//===============ver.Sigmoid=====================
+#include <Servo.h>
+#include <math.h>
+
+#define PIN_SERVO 10
+#define PIN_TRIG  12
+#define PIN_ECHO  13
+#define DISTANCE_THRESHOLD 30 // cm, 차량 감지 거리 (조정 가능)
+#define MOVING_TIME 2000 // 이동 시간 2초
+
+Servo myServo;
+unsigned long moveStartTime;
+int startAngle = 90; // 차단기 닫힘 각도
+int stopAngle  = 0; // 차단기 열림 각도
+
+void setup() {
+  Serial.begin(57600);
+  pinMode(PIN_TRIG, OUTPUT);
+  pinMode(PIN_ECHO, INPUT);
+
+  myServo.attach(PIN_SERVO);
+  myServo.write(startAngle); // 초기 위치 설정
+
+  moveStartTime = millis(); // 타이머 초기화
+  delay(500);
+}
+
+// Sigmoid 함수 기반 각도 계산 (부드러운 움직임)
+long sigmoid_angle(unsigned long progress, unsigned long totalTime, int start, int stop) {
+  // progress를 0.0에서 1.0 사이의 값으로 정규화
+  double t = (double)progress / totalTime;
+  
+  // Sigmoid 함수를 적용하여 속도 곡선 생성 (x=0.5에서 가장 가파름)
+  // 1 / (1 + e^(-k*(t-0.5))) 형태를 변형하여 t=0일 때 0, t=1일 때 1이 되도록 조정
+  // k=12 정도 사용
+  double k = 12.0;
+  double sigmoid_t = 1.0 / (1.0 + exp(-k * (t - 0.5)));
+  
+  // 0과 1 사이로 정규화된 값 (sigmoid_t)을 사용하여 각도를 선형 보간
+  long angle = (long)(start + (stop - start) * sigmoid_t);
+  
+  return angle;
+}
+
+// 초음파 센서로 거리 측정 (cm)
+long measureDistance() {
+  digitalWrite(PIN_TRIG, LOW);
+  delayMicroseconds(2);
+  digitalWrite(PIN_TRIG, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(PIN_TRIG, LOW);
+  
+  long duration = pulseIn(PIN_ECHO, HIGH);
+  // 음속 (340m/s)을 이용한 거리 계산: 거리 = 시간 * 속도 / 2
+  // cm로 변환: 거리 = duration * 0.034 / 2 (또는 duration / 58)
+  long distance = duration / 58;
+  
+  return distance;
+}
+
+void loop() {
+  long distance = measureDistance();
+  Serial.print("거리: ");
+  Serial.print(distance);
+  Serial.println(" cm");
+
+  // 현재 진행 시간
+  unsigned long progress = millis() - moveStartTime;
+  
+  // 목표 각도 설정 (현재 목표 각도가 stopAngle에 저장됨)
+  int targetAngle = (startAngle < stopAngle) ? stopAngle : startAngle;
+
+  if (progress < MOVING_TIME) {
+    // 이동 중
+    // Sigmoid 함수를 사용하여 현재 각도 계산
+    long angle = sigmoid_angle(progress, MOVING_TIME, startAngle, stopAngle);
+    myServo.write(angle); 
+  } else {
+    // 움직임 완료 후 또는 초기 상태
+    
+    // 1. 차량 접근 감지
+    bool carDetected = (distance <= DISTANCE_THRESHOLD && targetAngle == startAngle); // 닫혀있고, 차량 감지
+    
+    // 2. 차량 통과 감지 (열려있고, 차량이 사라짐)
+    bool carPassed = (distance > DISTANCE_THRESHOLD && targetAngle == stopAngle); // 열려있고, 차량이 사라짐
+    
+    if (carDetected || carPassed) {
+      // 방향 전환
+      int temp = startAngle;
+      startAngle = stopAngle;
+      stopAngle = temp;
+
+      moveStartTime = millis(); // 다음 움직임을 위해 타이머 리셋
+    }
+  }
+}
+
+
+
+//===============ver.easeInEaseOut====================
+#include <Servo.h>
+#include <math.h>
+
+#define PIN_SERVO 10
+#define PIN_TRIG  12
+#define PIN_ECHO  13
+#define DISTANCE_THRESHOLD 30 // cm, 차량 감지 거리 (조정 가능)
+#define MOVING_TIME 2000 // 이동 시간 2초
+
+Servo myServo;
+unsigned long moveStartTime;
+int startAngle = 90; // 차단기 닫힘 각도
+int stopAngle  = 0; // 차단기 열림 각도
+
+void setup() {
+  Serial.begin(57600);
+  pinMode(PIN_TRIG, OUTPUT);
+  pinMode(PIN_ECHO, INPUT);
+
+  myServo.attach(PIN_SERVO);
+  myServo.write(startAngle); // 초기 위치 설정
+
+  moveStartTime = millis(); // 타이머 초기화
+  delay(500);
+}
+
+// easeInEaseOut 함수 기반 각도 계산 (부드러운 움직임)
+long easeInEaseOut_angle(unsigned long progress, unsigned long totalTime, int start, int stop) {
+  // progress를 0.0에서 1.0 사이의 값으로 정규화
+  double t = (double)progress / totalTime;
+  
+  // easeInEaseOut (cubic-bezier 또는 smoothstep 함수의 변형)
+  // 0.0에서 0.5까지는 천천히(ease in), 0.5에서 1.0까지는 천천히(ease out) 움직이는 S자 곡선
+  double eased_t;
+  if (t < 0.5) {
+    // ease in (t^3)
+    eased_t = 4.0 * t * t * t;
+  } else {
+    // ease out (1 - (1-t)^3)
+    double t2 = 1.0 - t;
+    eased_t = 1.0 - (4.0 * t2 * t2 * t2);
+  }
+  
+  // 0과 1 사이로 정규화된 값 (eased_t)을 사용하여 각도를 선형 보간
+  long angle = (long)(start + (stop - start) * eased_t);
+  
+  return angle;
+}
+
+// 초음파 센서로 거리 측정 (cm)
+long measureDistance() {
+  digitalWrite(PIN_TRIG, LOW);
+  delayMicroseconds(2);
+  digitalWrite(PIN_TRIG, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(PIN_TRIG, LOW);
+  
+  long duration = pulseIn(PIN_ECHO, HIGH);
+  long distance = duration / 58;
+  
+  return distance;
+}
+
+void loop() {
+  long distance = measureDistance();
+  Serial.print("거리: ");
+  Serial.print(distance);
+  Serial.println(" cm");
+
+  // 현재 진행 시간
+  unsigned long progress = millis() - moveStartTime;
+
+  // 목표 각도 설정 (현재 목표 각도가 stopAngle에 저장됨)
+  int targetAngle = (startAngle < stopAngle) ? stopAngle : startAngle;
+
+  if (progress < MOVING_TIME) {
+    // 이동 중
+    // easeInEaseOut 함수를 사용하여 현재 각도 계산
+    long angle = easeInEaseOut_angle(progress, MOVING_TIME, startAngle, stopAngle);
+    myServo.write(angle); 
+  } else {
+    // 움직임 완료 후 또는 초기 상태
+    
+    // 1. 차량 접근 감지
+    bool carDetected = (distance <= DISTANCE_THRESHOLD && targetAngle == startAngle); // 닫혀있고, 차량 감지
+    
+    // 2. 차량 통과 감지 (열려있고, 차량이 사라짐)
+    bool carPassed = (distance > DISTANCE_THRESHOLD && targetAngle == stopAngle); // 열려있고, 차량이 사라짐
+    
+    if (carDetected || carPassed) {
+      // 방향 전환
+      int temp = startAngle;
+      startAngle = stopAngle;
+      stopAngle = temp;
+
+      moveStartTime = millis(); // 다음 움직임을 위해 타이머 리셋
+    }
+  }
+}
