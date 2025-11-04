@@ -1,0 +1,95 @@
+#include <Servo.h>
+
+// Arduino pin assignment
+
+#define PIN_IR    0         // IR sensor at Pin A0
+#define PIN_LED   9
+#define PIN_SERVO 10
+
+#define _DUTY_MIN 0    // servo full clock-wise position (0 degree), unit: microsec
+#define _DUTY_NEU 1400     // servo neutral position (90 degree), unit: microsec
+#define _DUTY_MAX 2800     // servo full counter-clockwise position (180 degree), unit: microsec
+
+#define _DIST_MIN  100.0   // minimum distance 100mm (10cm)
+#define _DIST_MAX  250.0   // maximum distance 250mm (25cm)
+
+#define EMA_ALPHA  0.5      // for EMA Filter, (0.0 < alpha <= 1.0)
+#define LOOP_INTERVAL 20    // Loop Interval (unit: msec), 20msec 이상 유지
+
+Servo myservo;
+unsigned long last_loop_time; // unit: msec
+
+float dist_prev = _DIST_MIN;
+float dist_ema = _DIST_MIN;
+
+void setup()
+{
+  pinMode(PIN_LED, OUTPUT);
+  
+  myservo.attach(PIN_SERVO); 
+  myservo.writeMicroseconds(_DUTY_NEU); // 초기 위치는 90도 (중립)
+  
+  Serial.begin(1000000); // 1,000,000 bps
+}
+
+void loop()
+{
+  unsigned long time_curr = millis();
+  int duty;
+  float a_value, dist_raw;
+
+  // wait until next event time
+  if (time_curr < (last_loop_time + LOOP_INTERVAL))
+    return;
+  last_loop_time += LOOP_INTERVAL;
+  
+  a_value = analogRead(PIN_IR); // 적외선 센서 값 읽기
+  
+  // 센서 값을 거리(mm)로 변환: dist_raw = (6762.0/(a_value-9)-4.0)*10.0 - 60.0;
+  // 단, 주어진 기본 코드에는 -60.0이 없으므로, 기본 코드의 식을 사용합니다.
+  // **요구사항**에 맞춰 `- 60.0`을 추가한 식을 사용했습니다:
+  dist_raw = ((6762.0 / (a_value - 9.0)) - 4.0) * 10.0 - 60.0; 
+
+  // Put range Filter code here (_DIST_MIN ~ _DIST_MAX)
+  // and turn on LED if the distance is in the range 
+  float dist_filtered;
+  if (dist_raw < _DIST_MIN) {
+    dist_filtered = _DIST_MIN; // 최소 거리보다 작으면 최소 값으로
+    digitalWrite(PIN_LED, HIGH); // 범위 내에 들어오면 LED 켜기 (요구사항: 10~25cm)
+  } else if (dist_raw > _DIST_MAX) {
+    dist_filtered = _DIST_MAX; // 최대 거리보다 크면 최대 값으로
+    digitalWrite(PIN_LED, LOW); // 범위 밖이면 LED 끄기
+  } else {
+    dist_filtered = dist_raw; // 범위 내이면 원본 값 사용
+    digitalWrite(PIN_LED, HIGH); // 범위 내에 들어오면 LED 켜기
+  }
+
+  // Put EMA filter code here
+  // EMA Filter: dist_ema = EMA_ALPHA * dist_filtered + (1 - EMA_ALPHA) * dist_prev;
+  dist_ema = EMA_ALPHA * dist_filtered + (1.0 - EMA_ALPHA) * dist_ema; // dist_ema를 이전 값으로 사용
+      
+  // map() equivalent code for linear interpolation
+  // (dist_ema, _DIST_MIN, _DIST_MAX) -> (_DUTY_MIN, _DUTY_MAX)
+  // duty = (dist_ema - _DIST_MIN) * (_DUTY_MAX - _DUTY_MIN) / (_DIST_MAX - _DIST_MIN) + _DUTY_MIN;
+  duty = (int)((dist_ema - _DIST_MIN) * (_DUTY_MAX - _DUTY_MIN) / (_DIST_MAX - _DIST_MIN) + _DUTY_MIN);
+  
+  // duty 값이 서보 모터의 동작 범위를 벗어나지 않도록 클램프
+  if (duty < _DUTY_MIN) duty = _DUTY_MIN;
+  if (duty > _DUTY_MAX) duty = _DUTY_MAX;
+  
+  myservo.writeMicroseconds(duty);
+
+  // 다음 루프를 위해 현재 EMA 값을 저장 (EMA 계산에 dist_ema를 직접 사용하여 생략 가능)
+  // dist_prev = dist_ema; 
+
+  // 시리얼 플로터 사용을 위한 포맷 유지
+  Serial.print("_DUTY_MIN:");  Serial.print(_DUTY_MIN);
+  Serial.print(",_DIST_MIN:");  Serial.print(_DIST_MIN);
+  Serial.print(",IR:");        Serial.print(a_value);
+  Serial.print(",dist_raw:");  Serial.print(dist_raw);
+  Serial.print(",ema:");       Serial.print(dist_ema);
+  Serial.print(",servo:");     Serial.print(duty);
+  Serial.print(",_DIST_MAX:"); Serial.print(_DIST_MAX);
+  Serial.print(",_DUTY_MAX:"); Serial.print(_DUTY_MAX);
+  Serial.println("");
+}
